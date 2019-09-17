@@ -54,14 +54,14 @@
 
 
 (define (chessblunder->image #:answer? (answer? #f) r)
-  (above
-   (text (hash-ref r 'blunderMove) 25 'red)
-   (if answer? 
-     (text (string-join (hash-ref r 'forcedLine) " ") 25 'green)
-     (text "What's the line?" 25 'white))
-   (scale 2
-          (image-chess
-           (fen->list 
-             (hash-ref r 'fenBefore))))))
+ (above
+  (text (hash-ref r 'blunderMove) 25 'red)
+  (if answer? 
+   (text (string-join (hash-ref r 'forcedLine) " ") 25 'green)
+   (text "What's the line?" 25 'black))
+  (scale 0.5
+   (image-chess
+    (fen->list 
+     (hash-ref r 'fenBefore))))))
 
 

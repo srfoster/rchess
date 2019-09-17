@@ -1,89 +1,48 @@
 #lang racket
 
+(require chess
+         rebellion/streaming/reducer
+         pict)
+
 (provide start-position
          image-chess)
 
-(require 2htdp/image racket/runtime-path)
-
-(define (image-chess pieces)
-  (define r1 (take (drop pieces (* 8 0)) 8))
-  (define r2 (take (drop pieces (* 8 1)) 8))
-  (define r3 (take (drop pieces (* 8 2)) 8))
-  (define r4 (take (drop pieces (* 8 3)) 8))
-  (define r5 (take (drop pieces (* 8 4)) 8))
-  (define r6 (take (drop pieces (* 8 5)) 8))
-  (define r7 (take (drop pieces (* 8 6)) 8))
-  (define r8 (take (drop pieces (* 8 7)) 8))
-
-  (define foreground
-    (above
-     (apply beside (map render-thing r1))
-     (apply beside (map render-thing r2))
-     (apply beside (map render-thing r3))
-     (apply beside (map render-thing r4))
-     (apply beside (map render-thing r5))
-     (apply beside (map render-thing r6))
-     (apply beside (map render-thing r7))
-     (apply beside (map render-thing r8))))
-
-  (overlay foreground (bg)))
-
-(define (render-thing s)
-  (if (eq? '_ s)
-      (square 20 'solid 'transparent)
-      (render-piece s)))
-
-(define (uppercase? s)
-  (regexp-match #rx"[A-Z]" s))
-
-(define (render-piece s)
-  (define letter (~a s))
-  (define color (if (uppercase? letter)
-                    "black"
-                    "white"))
-
-  (define symbol (lookup-symbol letter))
-
-
-  (define piece (text symbol 15 "black"))
-
-  (define scaled-piece
-    (scale/xy
-     1
-     (/ 20 (image-height piece))
-     piece))
-  
-  (overlay
-   scaled-piece 
-   (square 20 'solid 'transparent)))
-
-(define (lookup-symbol s)
+(define (symbol->piece s)
   (cond
-    [(string=? "K" s) "♚"]
-    [(string=? "Q" s) "♛"]
-    [(string=? "R" s) "♜"]
-    [(string=? "B" s) "♝"]
-    [(string=? "N" s) "♞"]
-    [(string=? "P" s) "♟"]
+    [(eq? s 'K) black-king]
+    [(eq? s 'Q) black-queen]
+    [(eq? s 'R) black-rook]
+    [(eq? s 'B) black-bishop]
+    [(eq? s 'N) black-knight]
+    [(eq? s 'P) black-pawn]
+    [(eq? s 'k) white-king]
+    [(eq? s 'q) white-queen]
+    [(eq? s 'r) white-rook]
+    [(eq? s 'b) white-bishop]
+    [(eq? s 'n) white-knight]
+    [(eq? s 'p) white-pawn]
+    [else #f]))
 
-    [(string=? "k" s) "♔"]
-    [(string=? "q" s) "♕"]
-    [(string=? "r" s) "♖"]
-    [(string=? "b" s) "♗"]
-    [(string=? "n" s) "♘"]
-    [(string=? "p" s) "♙"]))
-
-(define (bg)
-  (define whites
-    (map (thunk* (square 20 "solid" "white")) (range 4)))
-
-  (define blacks
-    (map (thunk* (square 20 "solid" "gray")) (range 4)))
-
-  (define r1 (apply beside (flatten (map list blacks whites))))
-  (define r2 (apply beside (flatten (map list whites blacks))))
-
-  (above r2 r1 r2 r1 r2 r1 r2 r1))
+(define (image-chess l)
+  (define i 0)
+  (define occupied-squares
+    (filter identity
+            (for*/list
+                ([rank (reverse (stream->list (in-chess-ranks)))]
+                 [file (in-chess-files)])
+              (define s (list-ref l i))
+              (set! i (add1 i))
+              (define square (chess-square #:rank rank #:file file))
+              (define piece (symbol->piece s))
+              (if piece
+                  (chess-square-occupy square piece)
+                  #f))))
+  
+  (pict->bitmap
+   (scale 
+    (chess-board-pict
+     (apply reduce into-chess-board occupied-squares))
+    2)))
 
 
 (define start-position
@@ -95,3 +54,4 @@
       _ _ _ _ _ _ _ _
       p p p p p p p p
       r n b q k b n r))
+

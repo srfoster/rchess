@@ -3,13 +3,17 @@
                     racket/base]]
 
 @title{rchess}
-@author{thoughtstem}
+@author{Stephen R. Foster}
 
 @defmodule[rchess]
 
-This is a toolkit for working with chess stuff.
+This is a toolkit for working with chess stuff -- primarily for the purposes of chess education.
 It can render chess diagrams, has some basic FEN parsing capabilities,
 and can fetch chess puzzles from the API at chessblunders.com.
+
+It builds on top of the racket @racket[chess] package (https://docs.racket-lang.org/chess).
+
+The vision is to add more puzzles, and more modalities for training.  Currently, the supported modality is to render out puzzles as images and to study them as flashcards.
  
 @(require rchess)
 
@@ -30,12 +34,15 @@ and can fetch chess puzzles from the API at chessblunders.com.
 Produces:
 
   @(image-chess start-position)
+
+
+Note that the @racket[chess] package provides many features for rendering.  This function exists 1) to render out a @racket[image?] instead of a @racket[pict?] and 2) to provide a super-simple way to do so.
 }
 
 
 @section{Puzzles}
 
-@defproc[(random-chessblunder) image?]{
+@defproc[(random-chessblunder) hash?]{
   Fetches a random blunder from chessblunders.com.
 
   @codeblock{
@@ -49,7 +56,7 @@ Produces:
 
 @defproc[(chessblunder 
            [#:answer? answer? boolean? #f] 
-           [id string?]) image?]{
+           [id string?]) hash?]{
   Fetches a random blunder from chessblunders.com.  The fetched data is cached locally, so subsequent calls do not trigger a request.
 
   @codeblock{
@@ -61,7 +68,7 @@ Produces:
   @(chessblunder->image 
      (chessblunder "557884cee13823b824cbae19"))
 
-  Note that not all data from the puzzle is shown -- e.g. whose move it is, whether a side can castle, en passant opportunities, etc.  That data is returned but isn't rendered.  (A low-hanging fruit for anyone who wants to contribute to rchess.)
+  Note that not all data from the puzzle is shown -- e.g. whose move it is, whether a side can castle, en passant opportunities, etc.  That data is returned from chessblunders.com but isn't currently rendered (a low-hanging fruit for anyone who wants to contribute to rchess.)
 
   You can show the correct answer with:
 

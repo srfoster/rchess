@@ -1,6 +1,6 @@
 #lang info
 (define collection "rchess")
-(define deps '("base"))
+(define deps '("base" "chess"))
 (define build-deps '("scribble-lib" "racket-doc" "rackunit-lib"))
 (define scribblings '(("scribblings/rchess.scrbl" ())))
 (define pkg-desc "Description Here")
