@@ -2,6 +2,12 @@
 
 (require chess)
 
+
+;TODO: Change (ray ...) to stop when it hits something 
+;      Take params - normal: end point inclusive if opposite color, exclusive if same color
+;                    pawn: exclusive regardless of color
+
+
 ;TODO: Add optional arguments later for other board state that is known when you are in the context of an actual game -- e.g. castling, en passant. 
 ; For now, we'll just do the stuff that doesn't require context other than the board itself, and the current player to move (implied by whatever color piece is on the from square).
 (define/contract (can-move? from to on)
@@ -12,10 +18,9 @@
     (define from-piece (square->piece from))
     (cond 
       [(not from-piece) #f]
-      [else (try-move from to)])))
+      [else (not (empty? (try-move from to)))])))
 
 (define current (make-parameter #f))
-(define from (make-parameter #f))
 
 (define (square->piece s)
   (chess-board-ref (current) s))
@@ -45,13 +50,15 @@
 
   (define p (occupied-chess-square-piece from-square))
 
+  (define empty-from-square (chess-square-remove-occupant from-square))
+
   (match (colored-chess-piece-type p)
-    [pawn (pawn-squares from)]
-    [knight (knight-squares from)]
-    [bishop (bishop-squares from)]
-    [rook (rook-squares from)]
-    [king (king-squares from)]
-    [queen (queen-squares from)]))
+    [pawn (pawn-squares empty-from-square)]
+    [knight (knight-squares empty-from-square)]
+    [bishop (bishop-squares empty-from-square)]
+    [rook (rook-squares empty-from-square)]
+    [king (king-squares empty-from-square)]
+    [queen (queen-squares empty-from-square)]))
 
 ;List of squares in order from from-square to to-square, inclusive of to-square
 ; Returns empty if they do not share a file, rank, diagonal
@@ -177,11 +184,134 @@
   ;  Two in color dir, if not occupied and can reach on file 
   ;diag-left in color dir if occupied by opposite color
   ;diag-right in color dir if occupied by opposite color
-  '())
+  (define p (chess-board-ref (current) s))
+
+  (define squares
+    (if (equal? white (colored-chess-piece-owner p))
+      (colored-pawn-squares s 1 north-end add1)
+      (colored-pawn-squares s 6 south-end sub1)))
+  
+  squares)
+
+(define (colored-pawn-squares s home-rank file-end forward-dir)
+  (define rank-index (chess-rank-index (chess-square-rank s)))  
+  (define file-index (chess-file-index (chess-square-file s)))  
+
+  (define dist
+    (if (= home-rank rank-index)
+      2 1))
+
+  (displayln dist)
+
+  (define forward-squares
+    (take (ray s (file-end s))
+          dist)) 
+
+  (when 
+    (and
+      (= 2 (length forward-squares))
+      (occupied-chess-square? 
+        (chess-board-ref-square 
+          (current)
+          (second forward-squares))))
+    (set! forward-squares (list (first forward-squares))))
+
+  (when (occupied-chess-square? 
+        (chess-board-ref-square 
+          (current)
+          (first forward-squares)))
+    (set! forward-squares '()))
+
+  (define capture-right-square
+    (maybe-chess-square 
+      #:file (add1 file-index) 
+      #:rank (forward-dir rank-index)))
+
+  (define capture-left-square
+    (maybe-chess-square 
+      #:file (sub1 file-index) 
+      #:rank (forward-dir rank-index)))
+
+  (define capture-right-piece
+    (and capture-right-square 
+         (chess-board-ref (current) capture-right-square)))
+
+  (define capture-left-piece
+    (and capture-left-square
+         (chess-board-ref (current) capture-left-square)))
+
+  (define capture-squares
+    (list
+      (and capture-right-piece capture-right-square)       
+      (and capture-left-piece capture-left-square)))
+
+  (filter identity
+          (append
+            forward-squares
+            capture-squares)))
+
+
+(define (maybe-chess-square #:rank r #:file f)
+  (with-handlers ([exn:fail? (thunk* #f)])
+    (chess-square #:rank (chess-rank r) 
+                  #:file (chess-file f))))
 
 (define (knight-squares s)
-  ;All l-shape moves if not occupied by same color
-  '())
+  (define add2 (compose add1 add1))
+  (define sub2 (compose sub1 sub1))
+  (define s-rank (chess-rank-index (chess-square-rank s)))  
+  (define s-file (chess-file-index (chess-square-file s)))  
+
+  (define up-up-right 
+    (maybe-chess-square 
+      #:file (add1 s-file)
+      #:rank (sub2 s-rank)))
+
+  (define up-right-right
+    (maybe-chess-square 
+      #:file (add2 s-file)
+      #:rank (sub1 s-rank)))
+
+  (define down-right-right
+    (maybe-chess-square 
+      #:file (add2 s-file)
+      #:rank (add1 s-rank)))
+
+  (define down-down-right
+    (maybe-chess-square 
+      #:file (add1 s-file)
+      #:rank (add2 s-rank)))
+
+  (define down-down-left
+    (maybe-chess-square 
+      #:file (sub1 s-file)
+      #:rank (add2 s-rank)))
+
+  (define down-left-left
+    (maybe-chess-square 
+      #:file (sub2 s-file)
+      #:rank (add1 s-rank)))
+
+  (define up-left-left
+    (maybe-chess-square 
+      #:file (sub2 s-file)
+      #:rank (sub1 s-rank)))
+
+  (define up-up-left
+    (maybe-chess-square 
+      #:file (sub1 s-file)
+      #:rank (sub2 s-rank)))
+
+  (filter identity
+          (list
+            up-up-right
+            up-right-right
+            down-right-right
+            down-down-right
+            down-down-left
+            down-left-left
+            up-left-left
+            up-up-left)))
 
 (define (bishop-squares s)
   ;Along each diagonal until opposite color (inclusive) or same color (exclusive)
@@ -280,9 +410,34 @@
   (displayln
     (ray e4 b1))
 
-  ;OBO
-  #;
   (displayln
     (parameterize ([current empty-chess-board])
       (rook-squares e4)))
+
+  (displayln
+    (parameterize ([current empty-chess-board])
+      (knight-squares e4)))
+
+  (displayln
+    (parameterize ([current empty-chess-board])
+      (knight-squares h5)))
+
+  (displayln
+    (parameterize ([current starting-chess-board])
+      (pawn-squares e2)) )
+
+  (displayln
+    (parameterize ([current starting-chess-board])
+      (pawn-squares e7)) )
+
+
+  (define test-board-1
+    (chess-board e4 white-pawn
+                 e5 black-pawn
+                 f5 black-knight))
+
+  (displayln
+    (parameterize ([current test-board-1])
+      (pawn-squares e4)))
+
   )
