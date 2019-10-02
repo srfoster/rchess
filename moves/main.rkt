@@ -188,7 +188,7 @@
 (define (seven? n)
   (= 7 n))
 
-(define (diag-until-end s rank-adj file-adj)
+(define (diag-until-end s rank-adj file-adj #:first (f? #f))
   (define s-rank (chess-rank-index (chess-square-rank s)))  
   (define s-file (chess-file-index (chess-square-file s)))  
 
@@ -198,23 +198,27 @@
         (seven? x)
         (seven? y)))
 
-  (if (on-edge s-rank s-file)
+
+  (if (and (not f?) 
+           (on-edge s-rank s-file))
     s
-    (north-east-end (chess-square
-                      #:rank (rank-adj s-rank)
-                      #:file (file-adj s-file)))))
+    (with-handlers ([exn:fail? (thunk* s)])
+      (diag-until-end (chess-square
+                        #:rank (chess-rank (rank-adj s-rank))
+                        #:file (chess-file (file-adj s-file)))
+                      rank-adj file-adj))))
 
 (define (north-east-end s)
-  (diag-until-end s add1 add1))
+  (diag-until-end s add1 add1 #:first #t))
 
 (define (south-east-end s)
-  (diag-until-end s add1 sub1))
+  (diag-until-end s add1 sub1 #:first #t))
 
 (define (south-west-end s)
-  (diag-until-end s sub1 sub1))
+  (diag-until-end s sub1 sub1 #:first #t))
 
 (define (north-west-end s)
-  (diag-until-end s sub1 add1))
+  (diag-until-end s sub1 add1 #:first #t))
 
 
 (define (pawn-squares s)
@@ -243,8 +247,8 @@
       2 1))
 
   (define forward-squares
-    (take (ray s (file-end s))
-          dist)) 
+    (safe-take (ray s (file-end s))
+               dist)) 
 
   (when 
     (and
@@ -255,10 +259,13 @@
           (second forward-squares))))
     (set! forward-squares (list (first forward-squares))))
 
-  (when (occupied-chess-square? 
+  (when 
+    (and
+      (= 1 (length forward-squares))
+      (occupied-chess-square? 
         (chess-board-ref-square 
           (current)
-          (first forward-squares)))
+          (first forward-squares))))
     (set! forward-squares '()))
 
   (define capture-right-square
@@ -380,7 +387,12 @@
     (safe-take (ray s (north-end s)) 1)
     (safe-take (ray s (east-end s)) 1)
     (safe-take (ray s (south-end s)) 1)
-    (safe-take (ray s (west-end s)) 1)))
+    (safe-take (ray s (west-end s)) 1)
+
+    (safe-take (ray s (north-east-end s)) 1)
+    (safe-take (ray s (south-east-end s)) 1)
+    (safe-take (ray s (south-west-end s)) 1)
+    (safe-take (ray s (north-west-end s)) 1))  )
 
 (define (queen-squares s)
   (append (rook-squares s)
@@ -522,11 +534,64 @@
     1))
 
 
-(module+ test
+(begin ;module+ test
+
+  (require "./move.rkt")
+  (require rackunit)
+
   (check-equal?
     (length (on-board starting-chess-board
                       (which white pawn #:to e4)))
-    1))
+    1)
+  
+  (define e4-e5
+    (on-board start
+              (moves 
+                [e2 e4]
+                [e7 e5])))
+  
+  (define d4-d5
+    (on-board start
+              (moves 
+                [d2 d4]
+                [d7 d5])))
+
+  (define e4-e5-Nf3
+    (on-board e4-e5
+              (moves 
+                [g1 f3])))
+
+  (check-equal?
+    (length (on-board e4-e5
+                      (which white queen #:to f3)))
+    1)
+
+  (check-equal?
+    (length (on-board e4-e5
+                      (which white bishop #:to b5)))
+    1)
+
+  (check-equal?
+    (length (on-board e4-e5-Nf3  
+                      (which black knight #:to c6)))
+    1)
+
+  (define test-board-2
+    (chess-board g1 white-king
+                 g2 white-pawn
+                 f1 white-rook
+                 f2 white-pawn))
+  (check-equal?
+    (on-board test-board-2
+              (king-squares g1))
+    (list h1 h2))
+
+  (check-equal?
+    (on-board e4-e5
+              (king-squares e1))
+    (list e2))
+
+  )
 
 
 

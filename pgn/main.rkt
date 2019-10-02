@@ -135,7 +135,10 @@
     [(normal? move)
      (make-normal-move move p)]
     [(castle? move)
-     p]
+     (on-board p
+               (if (string=? "O-O" (parsed-move-original move))
+                 (m:castle-kingside (current-player))
+                 (m:castle-queenside (current-player))))    ]
     [(result? move)
      p]))
 
@@ -159,6 +162,8 @@
   (define piece-type (colored-chess-piece-type piece))    
 
 
+  (displayln move)
+
   (define source
     (first 
         (on-board p
@@ -174,14 +179,8 @@
   (define source-piece
     (occupied-chess-square-piece source))
 
-  (displayln (current-player))
-  (displayln piece)
-  (displayln source-piece)
-
   (on-board p
-     (m:move source-square target)))
-
-
+    (m:move source-square target)))
 
 
 
