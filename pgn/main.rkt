@@ -13,7 +13,10 @@
   (syntax-parse stx
     [(_ exprs ...)
      #'(#%module-begin 
-        (map chess-board-pict (convert-to-position-list '(exprs ...)))      
+         (provide moves)
+
+         (define moves 
+           (convert-to-position-list '(exprs ...)))
         )]))
 
 
@@ -84,8 +87,6 @@
 
 
 (define (next-position move p)
-  (displayln move)
-  (displayln (chess-board-pict p))
   
   p)
 
