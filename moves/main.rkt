@@ -1,29 +1,44 @@
 #lang racket
 
-(require chess)
+(provide on-board
+         can-move?
+         which)
 
-
-;TODO: Change (ray ...) to stop when it hits something 
-;      Take params - normal: end point inclusive if opposite color, exclusive if same color
-;                    pawn: exclusive regardless of color
+(require chess 
+         "./util.rkt"
+         "./all-squares.rkt"
+         "./current-board.rkt"
+         )
 
 
 ;TODO: Add optional arguments later for other board state that is known when you are in the context of an actual game -- e.g. castling, en passant. 
 ; For now, we'll just do the stuff that doesn't require context other than the board itself, and the current player to move (implied by whatever color piece is on the from square).
-(define/contract (can-move? from to on)
-  (-> chess-square? chess-square? chess-board? boolean?)
-  (parameterize ([current on]
-                 ;Add params here for other board state: Castling state, en passant opportunities, etc.
-                 )
-    (define from-piece (square->piece from))
-    (cond 
-      [(not from-piece) #f]
-      [else (not (empty? (try-move from to)))])))
+(define (can-move? from to)
+  (define from-piece (square->piece from))
+  (cond 
+    [(not from-piece) #f]
+    [else (not (not (try-move from to)))]) )
 
-(define current (make-parameter #f))
 
-(define (square->piece s)
-  (chess-board-ref (current) s))
+(define (which color-of-piece
+               type-of-piece  
+               #:to to)
+
+  (define squares          (all-squares))
+  (define incoming-squares (filter (curryr can-move? to) squares))   
+
+  (filter
+    (lambda (s) 
+      (and
+        (equal? color-of-piece 
+                (colored-chess-piece-owner 
+                  (square->piece s)))  
+        (equal? type-of-piece 
+                (colored-chess-piece-type 
+                  (square->piece s)))))
+    (map 
+      (curry chess-board-ref-square (current))
+      incoming-squares)))
 
 (define (same-colors? a b)
   (define piece-a (square->piece a)) 
@@ -39,8 +54,9 @@
 (define (try-move from to)
   (define curr (current)) 
   (define from-square (chess-board-ref-square curr from))
+  (define possible (valid-squares from-square))
 
-  (member to (valid-squares from-square)))
+  (member to possible))
 
 (define (color-of p)
   (colored-chess-piece-owner p))
@@ -50,24 +66,49 @@
 
   (define p (occupied-chess-square-piece from-square))
 
-  (define empty-from-square (chess-square-remove-occupant from-square))
+  (define empty-from-square (square->square from-square))
 
-  (match (colored-chess-piece-type p)
-    [pawn (pawn-squares empty-from-square)]
-    [knight (knight-squares empty-from-square)]
-    [bishop (bishop-squares empty-from-square)]
-    [rook (rook-squares empty-from-square)]
-    [king (king-squares empty-from-square)]
-    [queen (queen-squares empty-from-square)]))
+  (define t (colored-chess-piece-type p)) 
+
+  (cond
+    [(eq? pawn t) (pawn-squares empty-from-square)]
+    [(eq? knight t) (knight-squares empty-from-square)]
+    [(eq? bishop t) (bishop-squares empty-from-square)]
+    [(eq? rook t) (rook-squares empty-from-square)]
+    [(eq? king t) (king-squares empty-from-square)]
+    [(eq? queen t) (queen-squares empty-from-square)]))
 
 ;List of squares in order from from-square to to-square, inclusive of to-square
 ; Returns empty if they do not share a file, rank, diagonal
+;Is chopped short if it hits a piece
 (define (ray from-square to-square)
+  (chop
+    from-square
+    (cond
+      [(same-file? from-square to-square) (file-ray from-square to-square)]
+      [(same-rank? from-square to-square) (rank-ray from-square to-square)]
+      [(same-diag? from-square to-square) (diag-ray from-square to-square)]
+      [else '()])))
+
+(define (chop from-square r)
+  (define (obstruction? s)
+    (chess-board-ref (current) s))
+
+  (define first-obstruction
+    (index-where r obstruction?))
+
+  
+
   (cond
-    [(same-file? from-square to-square) (file-ray from-square to-square)]
-    [(same-rank? from-square to-square) (rank-ray from-square to-square)]
-    [(same-diag? from-square to-square) (diag-ray from-square to-square)]
-    [else '()]))
+    [(not first-obstruction) r] 
+    [(same-colors? 
+       (list-ref r first-obstruction)
+       from-square)
+     (take r first-obstruction) ]
+    [else 
+      (take r (add1 first-obstruction))])
+
+  )
 
 ;from a to b, not including a
 ;  descending or not, depending on whether a is bigger than b or not.
@@ -147,7 +188,7 @@
 (define (seven? n)
   (= 7 n))
 
-(define (diag-until-end s rank-adj file-adj)
+(define (diag-until-end s rank-adj file-adj #:first (f? #f))
   (define s-rank (chess-rank-index (chess-square-rank s)))  
   (define s-file (chess-file-index (chess-square-file s)))  
 
@@ -157,42 +198,46 @@
         (seven? x)
         (seven? y)))
 
-  (if (on-edge s-rank s-file)
+
+  (if (and (not f?) 
+           (on-edge s-rank s-file))
     s
-    (north-east-end (chess-square
-                      #:rank (rank-adj s-rank)
-                      #:file (file-adj s-file)))))
+    (with-handlers ([exn:fail? (thunk* s)])
+      (diag-until-end (chess-square
+                        #:rank (chess-rank (rank-adj s-rank))
+                        #:file (chess-file (file-adj s-file)))
+                      rank-adj file-adj))))
 
 (define (north-east-end s)
-  (diag-until-end s add1 add1))
+  (diag-until-end s add1 add1 #:first #t))
 
 (define (south-east-end s)
-  (diag-until-end s add1 sub1))
+  (diag-until-end s add1 sub1 #:first #t))
 
 (define (south-west-end s)
-  (diag-until-end s sub1 sub1))
+  (diag-until-end s sub1 sub1 #:first #t))
 
 (define (north-west-end s)
-  (diag-until-end s sub1 add1))
+  (diag-until-end s sub1 add1 #:first #t))
 
-
-;Express below in terms of "rays" (except knight... hardcode)
 
 (define (pawn-squares s)
-  ;One in color dir if not occupied
-  ;On home row?
-  ;  Two in color dir, if not occupied and can reach on file 
-  ;diag-left in color dir if occupied by opposite color
-  ;diag-right in color dir if occupied by opposite color
   (define p (chess-board-ref (current) s))
 
+
   (define squares
-    (if (equal? white (colored-chess-piece-owner p))
-      (colored-pawn-squares s 1 north-end add1)
-      (colored-pawn-squares s 6 south-end sub1)))
+    (cond 
+      ;Unlike other pieces, we actually need to know what kind of pawn is here 
+      [(or (not p) 
+           (not (eq? pawn (colored-chess-piece-type p))))
+       '()] 
+      [(equal? white (colored-chess-piece-owner p))
+       (colored-pawn-squares s 1 north-end add1)]
+      [else (colored-pawn-squares s 6 south-end sub1)]))
   
   squares)
 
+;Just a helper...
 (define (colored-pawn-squares s home-rank file-end forward-dir)
   (define rank-index (chess-rank-index (chess-square-rank s)))  
   (define file-index (chess-file-index (chess-square-file s)))  
@@ -201,11 +246,9 @@
     (if (= home-rank rank-index)
       2 1))
 
-  (displayln dist)
-
   (define forward-squares
-    (take (ray s (file-end s))
-          dist)) 
+    (safe-take (ray s (file-end s))
+               dist)) 
 
   (when 
     (and
@@ -216,10 +259,13 @@
           (second forward-squares))))
     (set! forward-squares (list (first forward-squares))))
 
-  (when (occupied-chess-square? 
+  (when 
+    (and
+      (= 1 (length forward-squares))
+      (occupied-chess-square? 
         (chess-board-ref-square 
           (current)
-          (first forward-squares)))
+          (first forward-squares))))
     (set! forward-squares '()))
 
   (define capture-right-square
@@ -257,6 +303,8 @@
                   #:file (chess-file f))))
 
 (define (knight-squares s)
+
+
   (define add2 (compose add1 add1))
   (define sub2 (compose sub1 sub1))
   (define s-rank (chess-rank-index (chess-square-rank s)))  
@@ -265,42 +313,42 @@
   (define up-up-right 
     (maybe-chess-square 
       #:file (add1 s-file)
-      #:rank (sub2 s-rank)))
+      #:rank (add2 s-rank)))
 
   (define up-right-right
     (maybe-chess-square 
       #:file (add2 s-file)
-      #:rank (sub1 s-rank)))
+      #:rank (add1 s-rank)))
 
   (define down-right-right
     (maybe-chess-square 
       #:file (add2 s-file)
-      #:rank (add1 s-rank)))
+      #:rank (sub1 s-rank)))
 
   (define down-down-right
     (maybe-chess-square 
       #:file (add1 s-file)
-      #:rank (add2 s-rank)))
+      #:rank (sub2 s-rank)))
 
   (define down-down-left
     (maybe-chess-square 
       #:file (sub1 s-file)
-      #:rank (add2 s-rank)))
+      #:rank (sub2 s-rank)))
 
   (define down-left-left
     (maybe-chess-square 
       #:file (sub2 s-file)
-      #:rank (add1 s-rank)))
+      #:rank (sub1 s-rank)))
 
   (define up-left-left
     (maybe-chess-square 
       #:file (sub2 s-file)
-      #:rank (sub1 s-rank)))
+      #:rank (add1 s-rank)))
 
   (define up-up-left
     (maybe-chess-square 
       #:file (sub1 s-file)
-      #:rank (sub2 s-rank)))
+      #:rank (add2 s-rank)))
 
   (filter identity
           (list
@@ -329,12 +377,22 @@
     (ray s (south-end s))
     (ray s (west-end s))))
 
+(define (safe-take l n)
+  (if (<= (length l) n)
+    l
+    (take l n)))
+
 (define (king-squares s)
   (append
-    (take (ray s (north-end s)) 1)
-    (take (ray s (east-end s)) 1)
-    (take (ray s (south-end s)) 1)
-    (take (ray s (west-end s)))))
+    (safe-take (ray s (north-end s)) 1)
+    (safe-take (ray s (east-end s)) 1)
+    (safe-take (ray s (south-end s)) 1)
+    (safe-take (ray s (west-end s)) 1)
+
+    (safe-take (ray s (north-east-end s)) 1)
+    (safe-take (ray s (south-east-end s)) 1)
+    (safe-take (ray s (south-west-end s)) 1)
+    (safe-take (ray s (north-west-end s)) 1))  )
 
 (define (queen-squares s)
   (append (rook-squares s)
@@ -345,99 +403,195 @@
 (module+ test
   (require rackunit)
   (define start starting-chess-board)
+  (define empty empty-chess-board))
 
 
+(module+ test
   (check-true
-    (can-move? e2 e3 start)
-    "e3 is valid")
+    (on-board start
+       (can-move? g1 f3))
+    "Nf3 is valid"))
 
-  (check-true
-    (can-move? g1 f3 start)
-    "Nf3 is valid")
+(module+ test
+  (check-equal?
+    (on-board
+      (chess-board a5 black-pawn)
+      (ray a1 a8))
+    (list a2 a3 a4 a5))
 
+  (check-equal?
+    (on-board
+      (chess-board g7 black-pawn)
+      (ray a1 h8))
+    (list b2 c3 d4 e5 f6 g7)))
 
-  (check-false
-    (can-move? a1 b1 start)
-    "Can't move a piece onto its own color")
-
-  (check-false
-    (can-move? e3 e5 start)
-    "Can't move from a square with no pieces")
-
-  (check-false
-    (can-move? e2 e5 start)
-    "Can't move a pawn more than two squares")
-
-  (check-false
-    (can-move? a1 a3 start)
-    "Can't move a Rook through other pieces")
-
-  ;TODO: Tests....
-
-  #;
-  (displayln
-    (ray a1 a8))
-
-  #;
-  (displayln
-    (ray a1 h8))
-
-  #;
-  (displayln
-    (ray a1 h7))
-
-  #;
-  (displayln
-    (ray a1 h1))
-
-
-  ;OBO
-  (displayln
-    (ray e4 e1))
-
-  (displayln
-    (ray e4 e8))
-
-  (displayln
-    (ray e4 h4))
-
-  (displayln
-    (ray e4 a4))
-
-  (displayln
-    (ray e4 h7))
-
-  (displayln
-    (ray e4 b1))
-
-  (displayln
-    (parameterize ([current empty-chess-board])
-      (rook-squares e4)))
-
-  (displayln
-    (parameterize ([current empty-chess-board])
-      (knight-squares e4)))
-
-  (displayln
-    (parameterize ([current empty-chess-board])
-      (knight-squares h5)))
-
-  (displayln
-    (parameterize ([current starting-chess-board])
-      (pawn-squares e2)) )
-
-  (displayln
-    (parameterize ([current starting-chess-board])
-      (pawn-squares e7)) )
-
+(module+ test
 
   (define test-board-1
     (chess-board e4 white-pawn
                  e5 black-pawn
-                 f5 black-knight))
+                 f5 black-knight
+                 h7 black-pawn
+                 a3 white-pawn
+                 c4 white-pawn))
 
-  (displayln
-    (parameterize ([current test-board-1])
-      (pawn-squares e4)))
+  (check-true
+    (on-board start
+      (can-move? e2 e3))
+    "e3 is valid")
+
+  (check-true
+    (on-board start
+      (can-move? g1 f3))
+    "Nf3 is valid")
+
+
+  (check-false
+    (on-board start
+      (can-move? a1 b1))
+    "Can't move a piece onto its own color")
+
+  (check-false
+    (on-board start
+      (can-move? e3 e5))
+    "Can't move from a square with no pieces")
+
+  (check-false
+    (on-board start
+      (can-move? e2 e5))
+    "Can't move a pawn more than two squares")
+
+  (check-pred
+    (lambda (squares)
+      (not (member e6 squares )))
+    (on-board (chess-board e4 white-rook
+                           e6 white-knight)
+      (rook-squares e4))
+    "Should not be able to move onto your own pieces")
+
+  (check-false
+    (on-board start
+      (can-move? a1 a3))
+    "Can't move a Rook through other pieces")
+
+
+  (check-equal?
+    (on-board empty-chess-board
+      (rook-squares e4))
+    (list e5 e6 e7 e8 f4 g4 h4 e3 e2 e1 d4 c4 b4 a4))
+
+
+  (check-equal?
+    (on-board empty-chess-board
+      (knight-squares e4))
+    (list f6 g5 g3 f2 d2 c3 c5 d6))
+
+  (check-equal?
+    (on-board empty-chess-board
+      (knight-squares h5))
+    (list g3 f4 f6 g7))
+
+  (check-equal?
+    (on-board starting-chess-board
+      (pawn-squares e2))
+    (list e3 e4))
+
+  (check-equal?
+    (on-board starting-chess-board
+      (pawn-squares e7))
+    (list e6 e5))
+
+
+
+  (check-equal?
+    (on-board test-board-1
+              (pawn-squares e4))
+ 
+    (list f5))
+
+  (check-equal?
+    (on-board test-board-1
+              (pawn-squares e5))
+ 
+    (list ))
+
+  (check-equal?
+    (on-board test-board-1
+              (pawn-squares h7))
+ 
+    (list h6 h5))
+
+  (check-equal?
+    (on-board test-board-1
+              (pawn-squares a3))
+ 
+    (list a4)))
+
+(module+ test
+  (check-equal?
+    (length (on-board starting-chess-board
+                      (which white knight #:to f3)))
+    1))
+
+
+(begin ;module+ test
+
+  (require "./move.rkt")
+  (require rackunit)
+
+  (check-equal?
+    (length (on-board starting-chess-board
+                      (which white pawn #:to e4)))
+    1)
+  
+  (define e4-e5
+    (on-board start
+              (moves 
+                [e2 e4]
+                [e7 e5])))
+  
+  (define d4-d5
+    (on-board start
+              (moves 
+                [d2 d4]
+                [d7 d5])))
+
+  (define e4-e5-Nf3
+    (on-board e4-e5
+              (moves 
+                [g1 f3])))
+
+  (check-equal?
+    (length (on-board e4-e5
+                      (which white queen #:to f3)))
+    1)
+
+  (check-equal?
+    (length (on-board e4-e5
+                      (which white bishop #:to b5)))
+    1)
+
+  (check-equal?
+    (length (on-board e4-e5-Nf3  
+                      (which black knight #:to c6)))
+    1)
+
+  (define test-board-2
+    (chess-board g1 white-king
+                 g2 white-pawn
+                 f1 white-rook
+                 f2 white-pawn))
+  (check-equal?
+    (on-board test-board-2
+              (king-squares g1))
+    (list h1 h2))
+
+  (check-equal?
+    (on-board e4-e5
+              (king-squares e1))
+    (list e2))
 
   )
+
+
+
